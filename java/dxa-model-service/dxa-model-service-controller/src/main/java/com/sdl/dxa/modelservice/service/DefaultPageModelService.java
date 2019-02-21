@@ -9,6 +9,7 @@ import com.sdl.dxa.common.dto.PageRequestDto;
 import com.sdl.dxa.modelservice.service.processing.conversion.ToDd4tConverter;
 import com.sdl.dxa.modelservice.service.processing.conversion.ToR2Converter;
 import com.sdl.dxa.modelservice.service.processing.expansion.PageModelExpander;
+import com.sdl.dxa.tridion.linking.api.BatchLinkResolver;
 import com.sdl.dxa.tridion.linking.RichTextLinkResolver;
 import com.sdl.webapp.common.api.content.ContentProviderException;
 import com.sdl.webapp.common.api.content.LinkResolver;
@@ -23,6 +24,7 @@ import org.dd4t.core.util.HttpRequestContext;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Lookup;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -34,6 +36,8 @@ import static com.sdl.dxa.modelservice.service.ContentService.getModelType;
 
 /**
  * Service capable to load content and construct {@code models} out of it.
+ *
+ * Note: for in process the LinkResolver is overridden to BrokerTridionLinkResolver.
  */
 @Slf4j
 @Service
@@ -61,7 +65,7 @@ public class DefaultPageModelService implements PageModelService, LegacyPageMode
 
     @Autowired
     public DefaultPageModelService(@Qualifier("dxaR2ObjectMapper") ObjectMapper objectMapper,
-                                   LinkResolver linkResolver,
+                                   @Qualifier("dxaLinkResolver") LinkResolver linkResolver,
                                    ConfigService configService,
                                    EntityModelService entityModelService,
                                    ContentService contentService,
@@ -95,8 +99,10 @@ public class DefaultPageModelService implements PageModelService, LegacyPageMode
     @NotNull
     @Cacheable(value = "pageModels", key = "{ #root.methodName, #pageRequest }")
     public PageModelData loadPageModel(PageRequestDto pageRequest) throws ContentProviderException {
+
         String pageContent = contentService.loadPageContent(pageRequest);
         log.trace("Loaded page content for {}", pageRequest);
+
         return _processR2PageModel(pageContent, pageRequest);
     }
 
@@ -130,6 +136,7 @@ public class DefaultPageModelService implements PageModelService, LegacyPageMode
 
     @Contract("!null, _ -> !null")
     private PageModelData _processR2PageModel(String pageContent, PageRequestDto pageRequest) throws ContentProviderException {
+
         DataModelType publishedModelType = getModelType(pageContent);
         PageModelData pageModel;
         if (publishedModelType == DataModelType.DD4T) {
@@ -156,11 +163,12 @@ public class DefaultPageModelService implements PageModelService, LegacyPageMode
 
     @NotNull
     private PageModelExpander _getModelExpander(PageRequestDto pageRequestDto) {
-        return new PageModelExpander(pageRequestDto, entityModelService, richTextLinkResolver, linkResolver, configService);
+        return new PageModelExpander(pageRequestDto, entityModelService, richTextLinkResolver, linkResolver, configService, getBatchLinkResolver());
     }
 
     @Contract("!null, _ -> !null")
     private PageModelData _expandIncludePages(PageModelData pageModel, PageRequestDto pageRequest) throws ContentProviderException {
+
         if (pageModel.getRegions() != null) {
             Iterator<RegionModelData> iterator = pageModel.getRegions().iterator();
             while (iterator.hasNext()) {
@@ -196,5 +204,10 @@ public class DefaultPageModelService implements PageModelService, LegacyPageMode
         } catch (IOException e) {
             throw new ContentProviderException("Couldn't deserialize content '" + content + "' for " + expectedClass, e);
         }
+    }
+
+    @Lookup
+    public BatchLinkResolver getBatchLinkResolver() {
+        return null;
     }
 }
